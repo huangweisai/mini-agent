@@ -93,3 +93,4 @@ enum CmdType command_parse(const char *input, Command *cmd)
     cmd->type = CMD_UNKNOWN;
     return CMD_UNKNOWN;
 }
+}
