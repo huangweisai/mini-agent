@@ -1,28 +1,22 @@
 #include <stdio.h>
 #include <string.h>
-#include <signal.h>
+#include <signal.h>//我要用到sigal函数来处理题目中说的用户按下ctrl c实现清空输入区的功能
 #include "app.h"
 #include "tui.h"
 #include "input.h"
 #include "markdown.h"
-
-// 处理SIGINT信号（Ctrl+C产生的信号）
-// 这里什么都不做，让它变成一个普通的字符3
-// 这样input_read_line里面就能捕获Ctrl+C了
+//按照ascii表，把ctrl变成普通的字符3
 static void sigint_handler(int sig)
 {
-    (void)sig;  // 避免unused参数的警告
+    (void)sig;
 }
 
-// 初始化应用
+// 初始化
 void app_init(App *app)
 {
     app->running = 1;
-
-    // 注册信号处理，让Ctrl+C不要直接杀掉程序
+    //先对ctrl c信号进行处理
     signal(SIGINT, sigint_handler);
-
-    // 初始化界面
     tui_init();
 }
 
@@ -34,11 +28,9 @@ void app_cleanup(App *app)
 }
 
 // 处理用户输入的文字
-// 如果是指令就调用对应工具，如果是普通文字就回复429
 static void handle_input(App *app, const char *input)
 {
     (void)app;
-
     // 先在对话区显示用户输入了什么
     tui_add_chat_line("User:", 0);
     markdown_render_to_chat(input);
@@ -58,30 +50,23 @@ static void handle_input(App *app, const char *input)
     tui_refresh_chat();
     tui_draw_status();
 }
-
 // 主循环
 void app_run(App *app)
 {
     char buf[INPUT_MAX_LEN];
-
     while (app->running) {
-        // 每次循环都刷新一下状态栏（更新时间）
-        tui_draw_status();
-
-        // 读一行输入（会阻塞，等用户按Enter或Ctrl+C）
+        tui_draw_status();//更新状态栏，主要是更新时间
+        // 读一行输入（等用户按Enter或Ctrl+C）
         int result = input_read_line(buf);
-
         // 用户输入了 /exit
         if (result == -1) {
             app->running = 0;
             break;
         }
-
         // 用户按了Ctrl+C，输入已清空，继续等下一次输入
         if (result == 0) {
             continue;
         }
-
         // result == 1，用户正常提交了
         // 如果输入不为空，就处理
         if (strlen(buf) > 0) {
