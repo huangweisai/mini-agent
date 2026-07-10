@@ -4,11 +4,10 @@
 #include <unistd.h>
 #include "tui.h"
 #include "util.h"
-// 三个窗口的全局变量a
+// 三个窗口
 WINDOW *win_conv = NULL;//对话区
 WINDOW *win_status = NULL;//状态区
 WINDOW *win_input = NULL;//输入区
-
 // 用来保存对话区显示过的每一行
 #define MAX_CHAT_LINES 512
 static char  chat_text[MAX_CHAT_LINES][1024];
@@ -29,8 +28,7 @@ void tui_init(void)
 {
     // 进入ncurses模式
     initscr();
-    // raw模式：所有按键都交给程序处理，终端不做任何拦截
-    // 这样Ctrl+C不会产生信号，而是作为字符3传给程序
+    // raw模式：所有按键都交给程序处理，终端不做任何拦截，这样Ctrl+C不会产生信号，而是作为字符3传给程序
     raw();
     //不显示方向键
     noecho();
@@ -40,29 +38,25 @@ void tui_init(void)
     curs_set(1);
     // 启用方向按键
     keypad(stdscr, TRUE);
-
     // 初始化颜色
     if (has_colors()) {
         start_color();
-        //分别是，编号，前景和背景
-        init_pair(CP_STATUS, COLOR_BLACK,  COLOR_WHITE);
-        init_pair(CP_GREEN,  COLOR_GREEN,  COLOR_BLACK);
-        init_pair(CP_RED,    COLOR_RED,    COLOR_BLACK);
-        init_pair(CP_BLUE,   COLOR_BLUE,   COLOR_BLACK);
+        //分别是编号，前景和背景
+        init_pair(CP_STATUS,COLOR_BLACK,COLOR_WHITE);
+        init_pair(CP_GREEN,COLOR_GREEN,COLOR_BLACK);
+        init_pair(CP_RED,COLOR_RED,COLOR_BLACK);
+        init_pair(CP_BLUE,COLOR_BLUE,COLOR_BLACK);
     }
     // 创建窗口
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
     // 计算每个窗口的高度
-    int h_conv = rows - 4;  // 对话区占剩下的所有行
-    // 状态栏1行，输入区3行，加起来4行
-
-    // 创建三个窗口
-    // newwin(高度, 宽度, 起始行, 起始列)
-    win_conv   = newwin(h_conv,cols, 0,0);
-    win_status = newwin(1,cols,h_conv,0);
-    win_input  = newwin(3,cols,h_conv + 1,0);
-    // 对输入窗口也要启用特殊键，否则方向键会被当作普通字符
+    int h_conv = rows - 4;  // 对话区占剩下的所有行，状态栏1行，输入区3行，加起来4行
+    //newwin(高度, 宽度, 起始行, 起始列)
+    win_conv=newwin(h_conv,cols, 0,0);
+    win_status=newwin(1,cols,h_conv,0);
+    win_input=newwin(3,cols,h_conv + 1,0);
+    // 对输入窗口也要启用特殊键
     keypad(win_input, TRUE);
     //画一次
     tui_draw_status();
@@ -111,7 +105,7 @@ void tui_draw_status(void)
     struct tm *t = localtime(&now);
     char timebuf[16];
     strftime(timebuf, sizeof(timebuf), "%H:%M:%S", t);
-    // 时间放在最右边，留1个字符的边距
+    // 时间放在最右边
     int time_x = cols - (int)strlen(timebuf) - 1;
     if (time_x < 0) {
         time_x = 0;
@@ -120,7 +114,6 @@ void tui_draw_status(void)
     // 刷新状态栏
     wrefresh(win_status);
 }
-
 //画输入区
 void tui_draw_input(const char *buf, int cursor)
 {
@@ -128,32 +121,25 @@ void tui_draw_input(const char *buf, int cursor)
     werase(win_input);
     // 打印 "> "
     mvwprintw(win_input, 0, 0, "> ");
-
     // 打印用户输入的内容
     wprintw(win_input, "%s", buf);
-
     //把光标放到正确的位置，"> "是2个字符，加上cursor的偏移
     wmove(win_input, 0, 2 + cursor);
     // 刷新输入区
     wrefresh(win_input);
 }
-
-// 画输入区（多行版本，支持自动换行）
-void tui_draw_input_multiline(char lines[][1024], int *line_len,
-                               int num_lines, int cur_line, int cur_col)
+// 画输入区
+void tui_draw_input_multiline(char lines[][1024], int *line_len,int num_lines, int cur_line, int cur_col)
 {
     int cols = getmaxx(win_input);
     int rows = getmaxy(win_input);
     int wrap_col = cols - 2;  // 减去 "> " 的2个字符，每行能放多少字符
 
     werase(win_input);
-
-    // 把所有逻辑行展开成显示行（考虑自动换行）
     // 记录光标在显示上的位置
     int disp_row = 0;   // 光标在第几个显示行
     int disp_col = 0;   // 光标在第几列
     int total_disp = 0;  // 总显示行数
-
     int i;
     for (i = 0; i < num_lines; i++) {
         int len = line_len[i];
@@ -170,20 +156,17 @@ void tui_draw_input_multiline(char lines[][1024], int *line_len,
             total_disp++;
             continue;
         }
-
         // 按wrap_col分段显示
         int pos = 0;
         while (pos < len) {
             int chunk = len - pos;
             if (chunk > wrap_col) chunk = wrap_col;
-
             // 判断光标是否在这个显示行上
             if (i == cur_line && cur_col >= pos && cur_col <= pos + chunk) {
                 disp_row = total_disp;
                 disp_col = cur_col - pos;
             }
-
-            // 在输入区窗口显示（只显示rows行内的内容）
+            // 在输入区窗口显示，但是只显示rows行内的内容
             if (total_disp < rows) {
                 if (pos == 0) {
                     // 每个逻辑行的第一段前面加 "> "
@@ -195,18 +178,15 @@ void tui_draw_input_multiline(char lines[][1024], int *line_len,
                     waddnstr(win_input, lines[i] + pos, chunk);
                 }
             }
-
             pos += chunk;
             total_disp++;
         }
     }
-
     // 如果光标所在的逻辑行为空行且是最后一行
     if (cur_line == num_lines - 1 && line_len[cur_line] == 0) {
         disp_row = total_disp - 1;
         disp_col = 0;
     }
-
     // 如果总显示行超过窗口高度，只显示最后rows行
     int scroll = 0;
     if (total_disp > rows) {
@@ -216,26 +196,26 @@ void tui_draw_input_multiline(char lines[][1024], int *line_len,
         int row_idx = 0;
         int disp_idx = 0;
         for (i = 0; i < num_lines; i++) {
-            int len = line_len[i];
-            if (len == 0) {
-                if (disp_idx >= scroll && row_idx < rows) {
-                    mvwprintw(win_input, row_idx, 0, "> ");
-                    row_idx++;
-                }
-                disp_idx++;
-                continue;
+        int len = line_len[i];
+        if (len == 0) {
+        if (disp_idx >= scroll && row_idx < rows) {
+        mvwprintw(win_input, row_idx, 0, "> ");
+        row_idx++;
+        }
+        disp_idx++;
+        continue;
             }
             int pos = 0;
             while (pos < len) {
-                int chunk = len - pos;
-                if (chunk > wrap_col) chunk = wrap_col;
-                if (disp_idx >= scroll && row_idx < rows) {
+        int chunk = len - pos;
+        if (chunk > wrap_col) chunk = wrap_col;
+        if (disp_idx >= scroll && row_idx < rows) {
                     if (pos == 0) {
                         mvwprintw(win_input, row_idx, 0, "> ");
                         waddnstr(win_input, lines[i] + pos, chunk);
-                    } else {
+        } else {
                         mvwprintw(win_input, row_idx, 0, "  ");
-                        waddnstr(win_input, lines[i] + pos, chunk);
+                  waddnstr(win_input, lines[i] + pos, chunk);
                     }
                     row_idx++;
                 }
@@ -245,16 +225,13 @@ void tui_draw_input_multiline(char lines[][1024], int *line_len,
         }
         disp_row -= scroll;
     }
-
     // 定位光标
     if (disp_row >= 0 && disp_row < rows) {
         wmove(win_input, disp_row, 2 + disp_col);
     }
-
     wrefresh(win_input);
 }
-
-// ====== 往对话区加一行 ======
+//往对话区加一行
 void tui_add_chat_line(const char *line, int color)
 {
     // 如果满了，就把最早的丢掉，整体往前移动
@@ -266,14 +243,12 @@ void tui_add_chat_line(const char *line, int color)
         }
         chat_count = MAX_CHAT_LINES - 1;
     }
-
     strncpy(chat_text[chat_count], line, 1023);
     chat_text[chat_count][1023] = '\0';  // 确保有结尾
     chat_color[chat_count] = color;
     chat_count++;
 }
-
-// ====== 刷新对话区显示 ======
+//刷新对话区显示
 void tui_refresh_chat(void)
 {
     // 先清空对话区窗口
@@ -299,12 +274,9 @@ void tui_refresh_chat(void)
             wattroff(win_conv, COLOR_PAIR(color));
         }
     }
-
-    // 刷新对话区
     wrefresh(win_conv);
 }
-
-//清空对话区
+//清空对话
 void tui_clear_chat(void)
 {
     chat_count = 0;

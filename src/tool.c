@@ -9,13 +9,12 @@
 #include <fcntl.h>
 #include "tools.h"
 #include "tui.h"
-
 #define MAX_READ_LINES 500
 #define DEFAULT_READ_LIMIT 100
 #define MAX_OUTPUT_SIZE 16384
 #define EXEC_TIMEOUT 10
 
-// ====== 读取文件 ======
+//reaad
 int tool_read_file(const char *file, int lines, int start_line, int end_line,
                    char *errmsg, int errmsg_size)
 {
@@ -41,7 +40,6 @@ int tool_read_file(const char *file, int lines, int start_line, int end_line,
     // 方法2：读文件前8KB，如果有null字节就是二进制文件
     {
         int is_text = 1;  // 默认认为是文本
-
         // 尝试用 file 命令
         char cmd[2048];
         char mime[256];

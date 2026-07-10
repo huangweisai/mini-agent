@@ -2,14 +2,12 @@
 #include <stdio.h>
 #include "input.h"
 #include "tui.h"
-
 // 多行输入缓冲区
 static char  lines[INPUT_MAX_LINES][INPUT_MAX_LEN];
 static int   line_len[INPUT_MAX_LINES];
 static int   num_lines = 1;
 static int   cur_line = 0;
 static int   cur_col = 0;
-
 // 清空缓冲区
 static void buf_clear(void)
 {
@@ -22,7 +20,6 @@ static void buf_clear(void)
     cur_line = 0;
     cur_col = 0;
 }
-
 // 在光标位置插入一个字符
 static void buf_insert_char(char ch)
 {
@@ -39,19 +36,16 @@ static void buf_insert_char(char ch)
     line_len[cur_line]++;
     cur_col++;
 }
-
 // 在光标位置插入新行
 static void buf_insert_newline(void)
 {
     if (num_lines >= INPUT_MAX_LINES) return;
-
     char *line = lines[cur_line];
     char rest[INPUT_MAX_LEN];
     strcpy(rest, line + cur_col);
 
     line[cur_col] = '\0';
     line_len[cur_line] = cur_col;
-
     // 后面的行往下挪
     int i;
     for (i = num_lines; i > cur_line + 1; i--) {
@@ -65,7 +59,6 @@ static void buf_insert_newline(void)
     num_lines++;
     cur_col = 0;
 }
-
 // 删除光标前的字符
 static void buf_backspace(void)
 {
@@ -102,7 +95,6 @@ static void buf_backspace(void)
         }
     }
 }
-
 // 合并所有行到buf
 static void buf_join(char *buf, int buf_size)
 {
@@ -115,53 +107,45 @@ static void buf_join(char *buf, int buf_size)
         strncat(buf, lines[i], buf_size - (int)strlen(buf) - 1);
     }
 }
-
 // 主函数
 int input_read_line(char *buf)
 {
     buf_clear();
     // 初始绘制：显示 "> " 提示符
     tui_draw_input_multiline(lines, line_len, num_lines, cur_line, cur_col);
-
     while (1) {
         int ch = wgetch(win_input);
-
         // Enter: 直接提交（13='\r'）
         if (ch == '\r' || ch == KEY_ENTER) {
             buf_join(buf, INPUT_MAX_LEN * INPUT_MAX_LINES);
             if (strcmp(buf, "/exit") == 0) return -1;
             return 1;
         }
-
-        // Ctrl+J: 新开一行（10='\n'）
+        // Ctrl+J: 新开一行
         if (ch == '\n') {
             buf_insert_newline();
             tui_draw_input_multiline(lines, line_len, num_lines, cur_line, cur_col);
             continue;
         }
-
-        // Ctrl+C: 清空
+        // Ctrl+C
         if (ch == 3) {
             buf_clear();
             buf[0] = '\0';
             tui_draw_input_multiline(lines, line_len, num_lines, cur_line, cur_col);
             return 0;
         }
-
-        // Tab: 新开一行（因为Ctrl+J和Enter无法区分，用Tab代替）
+        //ctrl新开一行
         if (ch == '\t') {
             buf_insert_newline();
             tui_draw_input_multiline(lines, line_len, num_lines, cur_line, cur_col);
             continue;
         }
-
-        // Backspace
+        // 删除
         if (ch == KEY_BACKSPACE || ch == 127 || ch == '\b') {
             buf_backspace();
             tui_draw_input_multiline(lines, line_len, num_lines, cur_line, cur_col);
             continue;
         }
-
         // 左方向键
         if (ch == KEY_LEFT) {
             if (cur_col > 0) {
@@ -173,7 +157,6 @@ int input_read_line(char *buf)
             tui_draw_input_multiline(lines, line_len, num_lines, cur_line, cur_col);
             continue;
         }
-
         // 右方向键
         if (ch == KEY_RIGHT) {
             if (cur_col < line_len[cur_line]) {
@@ -186,7 +169,7 @@ int input_read_line(char *buf)
             continue;
         }
 
-        // 上方向键
+        // 上
         if (ch == KEY_UP) {
             if (cur_line > 0) {
                 cur_line--;
@@ -195,8 +178,6 @@ int input_read_line(char *buf)
             tui_draw_input_multiline(lines, line_len, num_lines, cur_line, cur_col);
             continue;
         }
-
-        // 下方向键
         if (ch == KEY_DOWN) {
             if (cur_line < num_lines - 1) {
                 cur_line++;
@@ -205,18 +186,15 @@ int input_read_line(char *buf)
             tui_draw_input_multiline(lines, line_len, num_lines, cur_line, cur_col);
             continue;
         }
-
-        // UTF-8多字节字符（中文等）
+        //处理中文
         if (ch >= 192) {
             char utf8[5];
             int utf8_len = 0;
             utf8[utf8_len++] = (char)ch;
-
             int extra = 0;
             if ((ch & 0xE0) == 0xC0) extra = 1;
             else if ((ch & 0xF0) == 0xE0) extra = 2;
             else if ((ch & 0xF8) == 0xF0) extra = 3;
-
             int k;
             for (k = 0; k < extra && utf8_len < 4; k++) {
                 int next = wgetch(win_input);
@@ -225,14 +203,12 @@ int input_read_line(char *buf)
                 }
             }
             utf8[utf8_len] = '\0';
-
             for (k = 0; k < utf8_len; k++) {
                 buf_insert_char(utf8[k]);
             }
             tui_draw_input_multiline(lines, line_len, num_lines, cur_line, cur_col);
             continue;
         }
-
         // 普通ASCII字符
         if (ch >= 32 && ch < 127) {
             buf_insert_char((char)ch);

@@ -7,7 +7,6 @@ char *util_short_path(char *dest, size_t size, const char *path)//这个函数�
 {
     const char *home = getenv("HOME");
     if (home && strncmp(path, home, strlen(home)) == 0) {
-        
         snprintf(dest, size, "~%s", path + strlen(home));
     } else {
         snprintf(dest, size, "%s", path);
