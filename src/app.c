@@ -21,23 +21,27 @@ void app_init(App *app)
 
     // 注册信号处理，让Ctrl+C不要直接杀掉程序
     signal(SIGINT, sigint_handler);
+
+    // 初始化界面
     tui_init();
 }
+
+// 清理
 void app_cleanup(App *app)
 {
     (void)app;
     tui_cleanup();
 }
 
-
-//处理输入的函数，是普通文字就回复429
+// 处理用户输入的文字
+// 如果是指令就调用对应工具，如果是普通文字就回复429
 static void handle_input(App *app, const char *input)
 {
     (void)app;
 
     // 先在对话区显示用户输入了什么
     tui_add_chat_line("User:", 0);
-    tui_add_chat_line(input, 0);
+    markdown_render_to_chat(input);
     tui_add_chat_line("", 0);  // 空行分隔
 
     // 不管是指令还是普通文字，都回复429

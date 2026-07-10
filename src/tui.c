@@ -48,10 +48,10 @@ void tui_init(void)
     if (has_colors()) {
         start_color();
         //            编号      前景        背景
-        init_pair(CP_STATUS, COLOR_BLACK,  COLOR_WHITE);  // 状态栏：黑字白底
-        init_pair(CP_GREEN,  COLOR_GREEN,  COLOR_BLACK);  // 绿色
-        init_pair(CP_RED,    COLOR_RED,    COLOR_BLACK);  // 红色
-        init_pair(CP_BLUE,   COLOR_BLUE,   COLOR_BLACK);  // 蓝色
+        init_pair(CP_STATUS, COLOR_BLACK,  COLOR_WHITE);
+        init_pair(CP_GREEN,  COLOR_GREEN,  COLOR_BLACK);
+        init_pair(CP_RED,    COLOR_RED,    COLOR_BLACK);
+        init_pair(CP_BLUE,   COLOR_BLUE,   COLOR_BLACK);
     }
 
     // 创建窗口
@@ -99,9 +99,9 @@ void tui_draw_status(void)
 {
     int cols = getmaxx(win_status);
 
-    // 先用状态栏的颜色对设置背景，然后清空
-    // 这样整个状态栏都会变成白底
-    wbkgd(win_status, COLOR_PAIR(CP_STATUS));
+    // 设置状态栏的背景颜色
+    // wbkgdset只设置属性，不会强制重绘整个窗口
+    wbkgdset(win_status, COLOR_PAIR(CP_STATUS));
     werase(win_status);
 
     // --- 左边显示当前目录 ---
@@ -201,15 +201,13 @@ void tui_refresh_chat(void)
         }
 
         int color = chat_color[idx];
+
         if (color != 0) {
-            // 有颜色就先开启颜色
             wattron(win_conv, COLOR_PAIR(color));
         }
-
-        mvwprintw(win_conv, i, 0, "%s", chat_text[idx]);
-
+        // 用mvwaddstr代替mvwprintw，避免格式化字符串的问题
+        mvwaddstr(win_conv, i, 0, chat_text[idx]);
         if (color != 0) {
-            // 显示完关掉颜色
             wattroff(win_conv, COLOR_PAIR(color));
         }
     }
