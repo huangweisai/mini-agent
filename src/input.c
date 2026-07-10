@@ -1,84 +1,242 @@
 #include <string.h>
+#include <stdio.h>
 #include "input.h"
 #include "tui.h"
-// 从输入区读取一行用户输入
-// buf: 存放输入内容的数组
-// 返回: 1相当于用户按了Enter提交, 0相当于用户按了Ctrl+C, -1相当于用户输入了/exit
+
+// 多行输入缓冲区
+static char  lines[INPUT_MAX_LINES][INPUT_MAX_LEN];
+static int   line_len[INPUT_MAX_LINES];
+static int   num_lines = 1;
+static int   cur_line = 0;
+static int   cur_col = 0;
+
+// 清空缓冲区
+static void buf_clear(void)
+{
+    int i;
+    for (i = 0; i < INPUT_MAX_LINES; i++) {
+        lines[i][0] = '\0';
+        line_len[i] = 0;
+    }
+    num_lines = 1;
+    cur_line = 0;
+    cur_col = 0;
+}
+
+// 在光标位置插入一个字符
+static void buf_insert_char(char ch)
+{
+    char *line = lines[cur_line];
+    int len = line_len[cur_line];
+    if (len >= INPUT_MAX_LEN - 1) return;
+
+    int i;
+    for (i = len; i > cur_col; i--) {
+        line[i] = line[i - 1];
+    }
+    line[cur_col] = ch;
+    line[len + 1] = '\0';
+    line_len[cur_line]++;
+    cur_col++;
+}
+
+// 在光标位置插入新行
+static void buf_insert_newline(void)
+{
+    if (num_lines >= INPUT_MAX_LINES) return;
+
+    char *line = lines[cur_line];
+    char rest[INPUT_MAX_LEN];
+    strcpy(rest, line + cur_col);
+
+    line[cur_col] = '\0';
+    line_len[cur_line] = cur_col;
+
+    // 后面的行往下挪
+    int i;
+    for (i = num_lines; i > cur_line + 1; i--) {
+        strcpy(lines[i], lines[i - 1]);
+        line_len[i] = line_len[i - 1];
+    }
+
+    cur_line++;
+    strcpy(lines[cur_line], rest);
+    line_len[cur_line] = (int)strlen(rest);
+    num_lines++;
+    cur_col = 0;
+}
+
+// 删除光标前的字符
+static void buf_backspace(void)
+{
+    if (cur_col > 0) {
+        char *line = lines[cur_line];
+        int len = line_len[cur_line];
+        int i;
+        for (i = cur_col - 1; i < len - 1; i++) {
+            line[i] = line[i + 1];
+        }
+        line[len - 1] = '\0';
+        line_len[cur_line]--;
+        cur_col--;
+    } else if (cur_line > 0) {
+        // 行首Backspace，合并到上一行
+        char *prev = lines[cur_line - 1];
+        int prev_len = line_len[cur_line - 1];
+        int curr_len = line_len[cur_line];
+
+        if (prev_len + curr_len < INPUT_MAX_LEN) {
+            strcat(prev, lines[cur_line]);
+            line_len[cur_line - 1] = prev_len + curr_len;
+
+            int i;
+            for (i = cur_line; i < num_lines - 1; i++) {
+                strcpy(lines[i], lines[i + 1]);
+                line_len[i] = line_len[i + 1];
+            }
+            lines[num_lines - 1][0] = '\0';
+            line_len[num_lines - 1] = 0;
+            num_lines--;
+            cur_line--;
+            cur_col = prev_len;
+        }
+    }
+}
+
+// 合并所有行到buf
+static void buf_join(char *buf, int buf_size)
+{
+    buf[0] = '\0';
+    int i;
+    for (i = 0; i < num_lines; i++) {
+        if (i > 0) {
+            strncat(buf, "\n", buf_size - (int)strlen(buf) - 1);
+        }
+        strncat(buf, lines[i], buf_size - (int)strlen(buf) - 1);
+    }
+}
+
+// 主函数
 int input_read_line(char *buf)
 {
-    int cursor = 0;  // 表示光标位置
-    int len = 0;     // 输入了多少个字符
-    int i;          
-    buf[0] = '\0';
-    // 画一下输入区
-    tui_draw_input(buf, cursor);
-    // 不断读取按键
+    buf_clear();
+    // 初始绘制：显示 "> " 提示符
+    tui_draw_input_multiline(lines, line_len, num_lines, cur_line, cur_col);
+
     while (1) {
         int ch = wgetch(win_input);
-        //enter
-        if (ch == '\n' || ch == KEY_ENTER) {
-            buf[len] = '\0';
-            // 检查是不是 /exit
-            if (strcmp(buf, "/exit") == 0) {
-                return -1;
-            }
-            // 正常提交
+
+        // Enter: 直接提交（13='\r'）
+        if (ch == '\r' || ch == KEY_ENTER) {
+            buf_join(buf, INPUT_MAX_LEN * INPUT_MAX_LINES);
+            if (strcmp(buf, "/exit") == 0) return -1;
             return 1;
         }
-        // Ctrl+C的ASCII码是3
+
+        // Ctrl+J: 新开一行（10='\n'）
+        if (ch == '\n') {
+            buf_insert_newline();
+            tui_draw_input_multiline(lines, line_len, num_lines, cur_line, cur_col);
+            continue;
+        }
+
+        // Ctrl+C: 清空
         if (ch == 3) {
-            // 清空输入
-            len = 0;
-            cursor = 0;
+            buf_clear();
             buf[0] = '\0';
-            tui_draw_input(buf, cursor);
+            tui_draw_input_multiline(lines, line_len, num_lines, cur_line, cur_col);
             return 0;
         }
-        //回退键，删除一个字符
+
+        // Tab: 新开一行（因为Ctrl+J和Enter无法区分，用Tab代替）
+        if (ch == '\t') {
+            buf_insert_newline();
+            tui_draw_input_multiline(lines, line_len, num_lines, cur_line, cur_col);
+            continue;
+        }
+
+        // Backspace
         if (ch == KEY_BACKSPACE || ch == 127 || ch == '\b') {
-            if (cursor > 0) {
-                // 把cursor后面的字符往前挪一位
-                for (i = cursor - 1; i < len - 1; i++) {
-                    buf[i] = buf[i + 1];
-                }
-                cursor--;
-                len--;
-                buf[len] = '\0';
-            }
-            tui_draw_input(buf, cursor);
+            buf_backspace();
+            tui_draw_input_multiline(lines, line_len, num_lines, cur_line, cur_col);
             continue;
         }
-        //左方向键
+
+        // 左方向键
         if (ch == KEY_LEFT) {
-            if (cursor > 0) {
-                cursor--;
+            if (cur_col > 0) {
+                cur_col--;
+            } else if (cur_line > 0) {
+                cur_line--;
+                cur_col = line_len[cur_line];
             }
-            tui_draw_input(buf, cursor);
+            tui_draw_input_multiline(lines, line_len, num_lines, cur_line, cur_col);
             continue;
         }
-        //右方向键
+
+        // 右方向键
         if (ch == KEY_RIGHT) {
-            if (cursor < len) {
-                cursor++;
+            if (cur_col < line_len[cur_line]) {
+                cur_col++;
+            } else if (cur_line < num_lines - 1) {
+                cur_line++;
+                cur_col = 0;
             }
-            tui_draw_input(buf, cursor);
+            tui_draw_input_multiline(lines, line_len, num_lines, cur_line, cur_col);
             continue;
         }
-        //除了上面的情况以外都当作正常情况
-        if (ch >= 32 && ch < 127) {//我看了ascii表，这一部分比较常见，包括数字和大小写字母，因此选取这一段作为展示吧
-            // 还有空间才插入
-            if (len < INPUT_MAX_LEN - 1) {
-                // 先把cursor位置及后面的字符往后挪一位
-                for (i = len; i > cursor; i--) {
-                    buf[i] = buf[i - 1];
-                }
-                // 在cursor位置放新字符
-                buf[cursor] = (char)ch;
-                cursor++;
-                len++;
-                buf[len] = '\0';
+
+        // 上方向键
+        if (ch == KEY_UP) {
+            if (cur_line > 0) {
+                cur_line--;
+                if (cur_col > line_len[cur_line]) cur_col = line_len[cur_line];
             }
-            tui_draw_input(buf, cursor);
+            tui_draw_input_multiline(lines, line_len, num_lines, cur_line, cur_col);
+            continue;
+        }
+
+        // 下方向键
+        if (ch == KEY_DOWN) {
+            if (cur_line < num_lines - 1) {
+                cur_line++;
+                if (cur_col > line_len[cur_line]) cur_col = line_len[cur_line];
+            }
+            tui_draw_input_multiline(lines, line_len, num_lines, cur_line, cur_col);
+            continue;
+        }
+
+        // UTF-8多字节字符（中文等）
+        if (ch >= 192) {
+            char utf8[5];
+            int utf8_len = 0;
+            utf8[utf8_len++] = (char)ch;
+
+            int extra = 0;
+            if ((ch & 0xE0) == 0xC0) extra = 1;
+            else if ((ch & 0xF0) == 0xE0) extra = 2;
+            else if ((ch & 0xF8) == 0xF0) extra = 3;
+
+            int k;
+            for (k = 0; k < extra && utf8_len < 4; k++) {
+                int next = wgetch(win_input);
+                if (next >= 128 && next < 192) {
+                    utf8[utf8_len++] = (char)next;
+                }
+            }
+            utf8[utf8_len] = '\0';
+
+            for (k = 0; k < utf8_len; k++) {
+                buf_insert_char(utf8[k]);
+            }
+            tui_draw_input_multiline(lines, line_len, num_lines, cur_line, cur_col);
+            continue;
+        }
+
+        // 普通ASCII字符
+        if (ch >= 32 && ch < 127) {
+            buf_insert_char((char)ch);
+            tui_draw_input_multiline(lines, line_len, num_lines, cur_line, cur_col);
             continue;
         }
     }

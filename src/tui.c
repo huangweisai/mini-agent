@@ -4,7 +4,7 @@
 #include <unistd.h>
 #include "tui.h"
 #include "util.h"
-// 三个窗口的全局变量
+// 三个窗口的全局变量a
 WINDOW *win_conv = NULL;//对话区
 WINDOW *win_status = NULL;//状态区
 WINDOW *win_input = NULL;//输入区
@@ -34,6 +34,8 @@ void tui_init(void)
     raw();
     //不显示方向键
     noecho();
+    // 不把回车转成换行，这样Enter和Ctrl+J可以区分
+    nonl();
     // 显示光标
     curs_set(1);
     // 启用方向按键
@@ -60,6 +62,8 @@ void tui_init(void)
     win_conv   = newwin(h_conv,cols, 0,0);
     win_status = newwin(1,cols,h_conv,0);
     win_input  = newwin(3,cols,h_conv + 1,0);
+    // 对输入窗口也要启用特殊键，否则方向键会被当作普通字符
+    keypad(win_input, TRUE);
     //画一次
     tui_draw_status();
     tui_draw_input("", 0);
@@ -127,10 +131,126 @@ void tui_draw_input(const char *buf, int cursor)
 
     // 打印用户输入的内容
     wprintw(win_input, "%s", buf);
-  
+
     //把光标放到正确的位置，"> "是2个字符，加上cursor的偏移
     wmove(win_input, 0, 2 + cursor);
     // 刷新输入区
+    wrefresh(win_input);
+}
+
+// 画输入区（多行版本，支持自动换行）
+void tui_draw_input_multiline(char lines[][1024], int *line_len,
+                               int num_lines, int cur_line, int cur_col)
+{
+    int cols = getmaxx(win_input);
+    int rows = getmaxy(win_input);
+    int wrap_col = cols - 2;  // 减去 "> " 的2个字符，每行能放多少字符
+
+    werase(win_input);
+
+    // 把所有逻辑行展开成显示行（考虑自动换行）
+    // 记录光标在显示上的位置
+    int disp_row = 0;   // 光标在第几个显示行
+    int disp_col = 0;   // 光标在第几列
+    int total_disp = 0;  // 总显示行数
+
+    int i;
+    for (i = 0; i < num_lines; i++) {
+        int len = line_len[i];
+        // 如果行为空，至少占一行
+        if (len == 0) {
+            if (i == cur_line) {
+                disp_row = total_disp;
+                disp_col = 0;
+            }
+            // 空行也要显示 "> "
+            if (total_disp < rows) {
+                mvwprintw(win_input, total_disp, 0, "> ");
+            }
+            total_disp++;
+            continue;
+        }
+
+        // 按wrap_col分段显示
+        int pos = 0;
+        while (pos < len) {
+            int chunk = len - pos;
+            if (chunk > wrap_col) chunk = wrap_col;
+
+            // 判断光标是否在这个显示行上
+            if (i == cur_line && cur_col >= pos && cur_col <= pos + chunk) {
+                disp_row = total_disp;
+                disp_col = cur_col - pos;
+            }
+
+            // 在输入区窗口显示（只显示rows行内的内容）
+            if (total_disp < rows) {
+                if (pos == 0) {
+                    // 每个逻辑行的第一段前面加 "> "
+                    mvwprintw(win_input, total_disp, 0, "> ");
+                    waddnstr(win_input, lines[i] + pos, chunk);
+                } else {
+                    // 续行空两格
+                    mvwprintw(win_input, total_disp, 0, "  ");
+                    waddnstr(win_input, lines[i] + pos, chunk);
+                }
+            }
+
+            pos += chunk;
+            total_disp++;
+        }
+    }
+
+    // 如果光标所在的逻辑行为空行且是最后一行
+    if (cur_line == num_lines - 1 && line_len[cur_line] == 0) {
+        disp_row = total_disp - 1;
+        disp_col = 0;
+    }
+
+    // 如果总显示行超过窗口高度，只显示最后rows行
+    int scroll = 0;
+    if (total_disp > rows) {
+        scroll = total_disp - rows;
+        // 重新绘制（只显示最后rows行）
+        werase(win_input);
+        int row_idx = 0;
+        int disp_idx = 0;
+        for (i = 0; i < num_lines; i++) {
+            int len = line_len[i];
+            if (len == 0) {
+                if (disp_idx >= scroll && row_idx < rows) {
+                    mvwprintw(win_input, row_idx, 0, "> ");
+                    row_idx++;
+                }
+                disp_idx++;
+                continue;
+            }
+            int pos = 0;
+            while (pos < len) {
+                int chunk = len - pos;
+                if (chunk > wrap_col) chunk = wrap_col;
+                if (disp_idx >= scroll && row_idx < rows) {
+                    if (pos == 0) {
+                        mvwprintw(win_input, row_idx, 0, "> ");
+                        waddnstr(win_input, lines[i] + pos, chunk);
+                    } else {
+                        mvwprintw(win_input, row_idx, 0, "  ");
+                        waddnstr(win_input, lines[i] + pos, chunk);
+                    }
+                    row_idx++;
+                }
+                pos += chunk;
+                disp_idx++;
+            }
+        }
+        disp_row -= scroll;
+    }
+
+    // 定位光标
+    if (disp_row >= 0 && disp_row < rows) {
+        wmove(win_input, disp_row, 2 + disp_col);
+    }
+
     wrefresh(win_input);
 }
 
